@@ -55,12 +55,20 @@ export async function takeScreenshot(urlRecord) {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
     await page.screenshot({ path: filePath, fullPage: true });
 
+    let fileSizeBytes = 0;
+    try {
+      if (fs.existsSync(filePath)) {
+        const stat = fs.statSync(filePath);
+        fileSizeBytes = stat.size || 0;
+      }
+    } catch (e) {}
+
     const db = await getDb();
     const insertStmt = db.prepare(`
-      INSERT INTO screenshots (url_id, file_path, file_name, width, height)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO screenshots (url_id, file_path, file_name, width, height, file_size_bytes)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    const result = insertStmt.run(id, filePath, fileName, 1920, 1080);
+    const result = insertStmt.run(id, filePath, fileName, 1920, 1080, fileSizeBytes);
 
     const updateStmt = db.prepare(`
       UPDATE urls SET last_screenshot_at = CURRENT_TIMESTAMP WHERE id = ?

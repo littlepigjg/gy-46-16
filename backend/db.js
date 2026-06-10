@@ -60,15 +60,42 @@ async function initDb() {
   }
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_id INTEGER,
+      name TEXT NOT NULL,
+      description TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_collapsed INTEGER NOT NULL DEFAULT 0,
+      default_frequency TEXT NOT NULL DEFAULT 'daily',
+      default_status TEXT NOT NULL DEFAULT 'active',
+      screenshot_strategy TEXT,
+      storage_quota_mb INTEGER,
+      access_permissions TEXT,
+      color TEXT,
+      icon TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (parent_id) REFERENCES groups(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_groups_parent_id ON groups(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_groups_sort_order ON groups(sort_order);
+
     CREATE TABLE IF NOT EXISTS urls (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER,
       url TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       frequency TEXT NOT NULL DEFAULT 'daily',
       status TEXT NOT NULL DEFAULT 'active',
+      custom_config TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_screenshot_at DATETIME
+      last_screenshot_at DATETIME,
+      FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_urls_group_id ON urls(group_id);
 
     CREATE TABLE IF NOT EXISTS screenshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,13 +104,37 @@ async function initDb() {
       file_name TEXT NOT NULL,
       width INTEGER,
       height INTEGER,
+      file_size_bytes INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_screenshots_url_id ON screenshots(url_id);
     CREATE INDEX IF NOT EXISTS idx_screenshots_created_at ON screenshots(created_at);
+
+    CREATE TABLE IF NOT EXISTS group_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      template_data TEXT NOT NULL,
+      is_builtin INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  const cols = db.exec("PRAGMA table_info(urls)")[0]?.values || [];
+  const colNames = cols.map(c => c[1]);
+  if (!colNames.includes('group_id')) {
+    db.exec('ALTER TABLE urls ADD COLUMN group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL');
+  }
+  if (!colNames.includes('custom_config')) {
+    db.exec('ALTER TABLE urls ADD COLUMN custom_config TEXT');
+  }
+  const scols = db.exec("PRAGMA table_info(screenshots)")[0]?.values || [];
+  const sColNames = scols.map(c => c[1]);
+  if (!sColNames.includes('file_size_bytes')) {
+    db.exec('ALTER TABLE screenshots ADD COLUMN file_size_bytes INTEGER');
+  }
 
   const wrappedDb = {
     prepare(sql) {
